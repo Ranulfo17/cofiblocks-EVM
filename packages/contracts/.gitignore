@@ -1,0 +1,35 @@
+# Logs e arquivos de build
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Dependências (Node e Foundry)
+node_modules/
+lib/
+
+# Arquivos de Build e Cache do Foundry
+cache/
+out/
+broadcast/
+remappings.txt
+foundry.toml.lock
+
+# Documentação Gerada pelo Foundry
+docs/
+
+# Diretórios de build de Frontend (ex: Vite, Next.js)
+dist/
+.next/
+.vercel/
+
+# Arquivos de Ambiente (NUNCA envie chaves privadas para o Git)
+.env
+.env.*
+!.env.example
+
+# Arquivos de Sistema Operacional e Editor
+.DS_Store
+.vscode/
+
