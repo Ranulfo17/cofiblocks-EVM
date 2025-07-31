@@ -6,10 +6,19 @@ import {CofiCollection} from "src/tokens/CofiCollection.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
+/**
+ * @title Test Suite for CofiCollection
+ * @author CofiBlocks Team
+ * @dev This contract tests all functionality of the CofiCollection contract,
+ * including unit tests, fuzz tests, and invariant tests.
+ */
 contract CofiCollectionTest is Test {
+    /// @dev The main contract instance under test, accessed via its proxy.
     CofiCollection internal collection;
+    /// @dev The address of the ERC1967 proxy contract.
     address internal proxyAddress;
 
+    // --- Test Personas ---
     address internal admin = makeAddr("admin");
     address internal pauser = makeAddr("pauser");
     address internal minter = makeAddr("minter");
@@ -19,12 +28,16 @@ contract CofiCollectionTest is Test {
     address internal user2 = makeAddr("user2");
     address internal attacker = makeAddr("attacker");
 
+    // --- Role Hashes ---
     bytes32 internal constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 internal constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 internal constant URI_SETTER_ROLE = keccak256("URI_SETTER_ROLE");
     bytes32 internal constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
     bytes32 internal constant DEFAULT_ADMIN_ROLE = 0x00;
 
+    /**
+     * @dev Deploys a fresh CofiCollection proxy instance before each test.
+     */
     function setUp() public {
         CofiCollection implementation = new CofiCollection();
         bytes memory data = abi.encodeWithSelector(CofiCollection.initialize.selector, admin, pauser, minter, uriSetter, upgrader);
@@ -33,6 +46,11 @@ contract CofiCollectionTest is Test {
         collection = CofiCollection(proxyAddress);
     }
 
+    // =================================
+    //         Unit Tests
+    // =================================
+
+    /// @dev Tests if roles are correctly assigned during contract initialization.
     function test_Initialization_RolesAreSetCorrectly() public view {
         assertTrue(collection.hasRole(DEFAULT_ADMIN_ROLE, admin));
         assertTrue(collection.hasRole(PAUSER_ROLE, pauser));
@@ -41,18 +59,21 @@ contract CofiCollectionTest is Test {
         assertTrue(collection.hasRole(UPGRADER_ROLE, upgrader));
     }
 
+    /// @dev Tests that an account with MINTER_ROLE can successfully mint tokens.
     function test_Mint_SucceedsForMinter() public {
         vm.prank(minter);
         collection.mint(user1, 1, 100, "");
         assertEq(collection.balanceOf(user1, 1), 100);
     }
 
+    /// @dev Tests that a call to mint() from an unauthorized account correctly reverts.
     function test_RevertWhen_Mint_CalledByNonMinter() public {
         vm.expectRevert(abi.encodeWithSelector(bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), attacker, MINTER_ROLE));
         vm.prank(attacker);
         collection.mint(user1, 1, 100, "");
     }
 
+    /// @dev Tests that token transfers revert when the contract is paused.
     function test_Pause_TransfersShouldFailWhenPaused() public {
         vm.prank(minter);
         collection.mint(user1, 1, 100, "");
@@ -64,24 +85,26 @@ contract CofiCollectionTest is Test {
         collection.safeTransferFrom(user1, user2, 1, 50, "");
     }
 
+    /// @dev Tests that token transfers succeed after the contract is unpaused.
     function test_Unpause_TransfersShouldSucceedWhenUnpaused() public {
-        // 1. Minter cria o token para user1
+        // 1. Minter creates the token for user1
         vm.prank(minter);
         collection.mint(user1, 1, 100, "");
 
-        // 2. Pauser pausa e depois despausa, usando startPrank para múltiplas chamadas
+        // 2. Pauser pauses and then unpauses the contract
         vm.startPrank(pauser);
         collection.pause();
         collection.unpause();
         vm.stopPrank();
-        assertFalse(collection.paused(), "O contrato deveria estar despausado");
+        assertFalse(collection.paused(), "Contract should be unpaused");
 
-        // 3. Dono do token (user1) agora consegue transferir com sucesso
+        // 3. The token owner (user1) can now successfully transfer
         vm.prank(user1);
         collection.safeTransferFrom(user1, user2, 1, 50, "");
-        assertEq(collection.balanceOf(user2, 1), 50, "A transferencia deveria ocorrer apos despausar");
+        assertEq(collection.balanceOf(user2, 1), 50, "Transfer should succeed after unpause");
     }
 
+    /// @dev Tests that the contract can be successfully upgraded to a new implementation via the UUPS proxy pattern.
     function test_Upgradeability_CanUpgradeToNewImplementation() public {
         CofiCollectionV2 newImplementation = new CofiCollectionV2();
         vm.prank(upgrader);
@@ -90,6 +113,11 @@ contract CofiCollectionTest is Test {
         assertEq(upgradedCollection.version(), "v2");
     }
 
+    // =================================
+    //         Fuzz Tests
+    // =================================
+
+    /// @dev Fuzzes the mint and burn functions to ensure balance accounting is correct across a wide range of inputs.
     function testFuzz_MintAndBurn(uint96 tokenId, uint128 amount, address recipient) public {
         vm.assume(recipient != address(0) && amount > 0);
         vm.prank(minter);
@@ -99,14 +127,20 @@ contract CofiCollectionTest is Test {
         collection.burn(recipient, tokenId, amount);
         assertEq(collection.balanceOf(recipient, tokenId), 0);
     }
+    
+    // =================================
+    //       Invariant Tests
+    // =================================
 
     CofiCollectionHandler internal handler;
 
+    /// @dev Sets up the handler contract for stateful fuzzing required by invariant tests.
     function setUpInvariantTesting() public {
         handler = new CofiCollectionHandler(collection, minter);
         targetContract(address(handler));
     }
 
+    /// @dev Invariant: The sum of all individual balances for any token ID must always equal the total supply tracked by the handler.
     function invariant_TotalSupplyIsConsistent() public {
         setUpInvariantTesting();
         uint256 knownIdsLength = handler.getKnownIdsLength();
@@ -123,10 +157,18 @@ contract CofiCollectionTest is Test {
     }
 }
 
+/**
+ * @title Handler for Invariant Testing
+ * @dev A stateful contract that performs a sequence of actions on CofiCollection 
+ * for the Foundry invariant testing engine. It uses ghost variables to mirror
+ * the state of the main contract and verify its properties.
+ */
 contract CofiCollectionHandler is Test {
     CofiCollection internal collection;
     address[] public actors;
     address internal minter;
+
+    // --- Ghost Variables ---
     mapping(uint256 => uint256) public ghostTotalSupply;
     uint256[] public knownIds;
     mapping(uint256 => bool) private idExists;
@@ -139,14 +181,17 @@ contract CofiCollectionHandler is Test {
         actors.push(makeAddr("inv_user_3"));
     }
 
+    /// @dev Getter for the list of actors, required for inter-contract array access in tests.
     function getActors() public view returns (address[] memory) {
         return actors;
     }
 
+    /// @dev Getter for the length of known token IDs, required for inter-contract array access in tests.
     function getKnownIdsLength() public view returns (uint256) {
         return knownIds.length;
     }
 
+    /// @dev Handler function that calls the mint function on the main contract with fuzzed inputs.
     function mint(uint96 tokenId, uint128 amount, uint256 actorSeed) public {
         amount = uint128(bound(amount, 1, 10e18));
         address recipient = actors[actorSeed % actors.length];
@@ -159,6 +204,7 @@ contract CofiCollectionHandler is Test {
         }
     }
 
+    /// @dev Handler function that calls the burn function on the main contract with fuzzed inputs.
     function burn(uint96 tokenId, uint128 amount, uint256 actorSeed) public {
         if (knownIds.length == 0) return;
         tokenId = uint96(knownIds[tokenId % knownIds.length]);
@@ -171,6 +217,7 @@ contract CofiCollectionHandler is Test {
         ghostTotalSupply[tokenId] -= amount;
     }
 
+    /// @dev Handler function that calls the safeTransferFrom function with fuzzed inputs.
     function safeTransferFrom(uint96 tokenId, uint128 amount, uint256 fromSeed, uint256 toSeed) public {
         if (knownIds.length == 0) return;
         tokenId = uint96(knownIds[tokenId % knownIds.length]);
@@ -185,6 +232,9 @@ contract CofiCollectionHandler is Test {
     }
 }
 
+/**
+ * @dev A mock V2 contract used solely to test the upgrade functionality of the main contract.
+ */
 contract CofiCollectionV2 is CofiCollection {
     function version() public pure returns (string memory) {
         return "v2";

@@ -5,14 +5,25 @@ import {Script, console} from "forge-std/Script.sol";
 import {CofiCollection} from "src/tokens/CofiCollection.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
+/**
+ * @title DeployCofiCollection Script
+ * @author CofiBlocks Team
+ * @notice This script deploys the CofiCollection contract system, which includes an 
+ * implementation contract and an ERC1967 proxy for upgradeability.
+ * @dev It reads the deployer's private key from the .env file and assigns all initial
+ * roles to the deployer account by default.
+ */
 contract DeployCofiCollection is Script {
-    function run() public returns (address) {
-        // Carrega as variáveis de ambiente do arquivo .env
+    /**
+     * @notice Executes the deployment sequence.
+     * @return proxyAddress The address of the deployed ERC1967 proxy contract.
+     */
+    function run() public returns (address proxyAddress) {
+        // Load the deployer private key from the .env file
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         
-        // Define os endereços para os papéis.
-        // Por padrão, a conta deployer receberá todos os papéis.
-        // Você pode alterar isso para endereços diferentes se necessário.
+        // By default, the deployer account will receive all roles.
+        // This can be changed to different addresses if needed.
         address deployer = vm.addr(deployerPrivateKey);
         address defaultAdmin = deployer;
         address pauser = deployer;
@@ -20,16 +31,16 @@ contract DeployCofiCollection is Script {
         address uriSetter = deployer;
         address upgrader = deployer;
 
-        console.log("Iniciando deploy com a conta:", defaultAdmin);
-        console.log("Saldo da conta:", defaultAdmin.balance / 1e18, "ETH");
+        console.log("Deploying with account:", defaultAdmin);
+        console.log("Account balance:", defaultAdmin.balance / 1e18, "ETH");
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // 1. Implanta o contrato de implementação (lógica)
+        // 1. Deploy the implementation contract (logic)
         CofiCollection implementation = new CofiCollection();
-        console.log("Contrato de implementacao implantado em:", address(implementation));
+        console.log("Implementation contract deployed to:", address(implementation));
 
-        // 2. Prepara a chamada de inicialização
+        // 2. Prepare the initializer function call
         bytes memory data = abi.encodeWithSelector(
             CofiCollection.initialize.selector,
             defaultAdmin,
@@ -39,9 +50,9 @@ contract DeployCofiCollection is Script {
             upgrader
         );
 
-        // 3. Implanta o contrato de Proxy apontando para a implementação
+        // 3. Deploy the ERC1967 proxy contract, pointing to the implementation
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), data);
-        console.log("Contrato CofiCollection (Proxy) implantado em:", address(proxy));
+        console.log("CofiCollection (Proxy) deployed to:", address(proxy));
 
         vm.stopBroadcast();
         
