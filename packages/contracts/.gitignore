@@ -24,7 +24,7 @@ dist/
 .next/
 .vercel/
 
-# Arquivos de Ambiente (NUNCA envie chaves privadas para o Git)
+# Arquivos de Ambiente 
 .env
 .env.*
 !.env.example
@@ -33,3 +33,5 @@ dist/
 .DS_Store
 .vscode/
 
+# Arquivos de metadados do Windows
+*Zone.Identifier
